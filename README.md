@@ -40,6 +40,15 @@ jsnntok_t *breed;
 breed = jsnn_get(tokens, "dogs[1].breed", tokens, json);
 ```
 
+This works on subpaths, too. For example, you can grab the token that points to
+the Gracie object, then take attributes from that.
+
+```c
+jsnntok_t *gracie, *breed;
+gracie = jsnn_get(tokens, "dogs[1]", tokens, json);
+breed = jsnn_get(gracie, "breed", tokens, json);
+```
+
 Below is the documentation from jsmn.
 
 JSMN
