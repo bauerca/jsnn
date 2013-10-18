@@ -3,6 +3,7 @@ project(jsnn)
 enable_testing()
 
 add_library(jsnn STATIC jsnn.c)
+set_target_properties(jsnn PROPERTIES COMPILE_FLAGS "-g")
 
 add_executable(jsnn_test jsnn_test.c)
 target_link_libraries(jsnn_test jsnn)

@@ -6,6 +6,40 @@ in my opinion) goodies. I did not officially fork using github
 because the mirrors seem to be pretty stagnant; [noct/jsmn](https://github.com/noct/jsmn)
 for one.
 
+I have added the ability to extract data from the list of tokens created
+by the parser using friendly 'ol javascript syntax. For example, given
+the json string:
+
+```json
+{
+    "dogs": [
+        {
+            "name": "spot",
+            "breed": "terrier"
+        },
+        {
+            "name": "gracie",
+            "breed": "golden retriever"
+        }
+    ],
+    "cats": [
+        {
+            "name": "pickles",
+            "breed": "sphynx"
+        }
+    ]
+}
+```
+
+After parsing with `jsnn` (assuming the tokens are stored in `tokens`
+and the json string is stored in `json`), you can extract the breed of Gracie with
+the following:
+
+```c
+jsnntok_t *breed;
+breed = jsnn_get(tokens, "dogs[1].breed", tokens, json);
+```
+
 Below is the documentation from jsmn.
 
 JSMN

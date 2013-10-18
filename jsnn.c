@@ -4,22 +4,6 @@
 
 #include "jsnn.h"
 
-void jsnn_index_path(jsnn_path *path, jsnntype_t value_type, jsnn_path *array) {
-    path->type = JSNN_PATH_INDEX;
-    path->value_type = value_type;
-    path->name = NULL;
-    path->index = 0;
-    path->parent = array;
-}
-
-void jsnn_attr_path(jsnn_path *path, const char *name, jsnntype_t value_type, jsnn_path *object) {
-    path->type = JSNN_PATH_ATTR;
-    path->value_type = value_type;
-    path->name = name;
-    path->index = 0;
-    path->parent = object;
-}
-
 
 /**
  * Allocates a fresh unused token from the token pull.
@@ -151,173 +135,195 @@ const char *jsnn_type_strs[] = {
 };
 
 static
-const char *jsnn_path_type_strs[] = {
-    "JSNN_PATH_INDEX",
-    "JSNN_PATH_ATTR"
+const char *jsnn_pair_type_strs[] = {
+    "JSNN_NAME",
+    "JSNN_VALUE"
 };
 
+
 static
-void print_path(jsnn_path *path) {
-    jsnn_path *p = path;
-    char s[256], s2[256];
-    s[0] = '\0';
-
-    for (;;) {
-        if (p == NULL)
-            break;
-        switch (p->type) {
-        case JSNN_PATH_INDEX:
-            strcpy(s2, s);
-            strcpy(s, "#.");
-            strcat(s, s2);
-            break;
-        case JSNN_PATH_ATTR:
-            strcpy(s2, s);
-            strcpy(s, p->name);
-            strcat(s, ".");
-            strcat(s, s2);
-            break;
-        }
-
-        p = p->parent;
-    }
-
-    printf("%s", s);
+void print_token(const char *js, jsnntok_t *t) {
+    printf("token:\n"
+        "  size: %d\n"
+        "  start: %d\n"
+        "  end: %d\n"
+        "  type: %s\n"
+        "  pairtype: %s\n"
+        "  val: %.*s\n\n",
+        t->size,
+        t->start,
+        t->end,
+        jsnn_type_strs[t->type],
+        jsnn_pair_type_strs[t->pair_type],
+        t->end - t->start,
+        js + t->start);
 }
 
 static
-void print_tail_token(const char *js, jsnntok_t *token) {
-    int width = 10;
-
-    if (token->end > width) {
-        printf("...%.*s", width, js + token->end - width);
-    } else {
-        printf("%.*s", token->end, js);
-    }
-}
-    
-
-/**
- * Check that a token matches the given path by climbing the token
- * hierarchy.
- * @param token Current value token.
- * @param path  Path to check for match.
- */
-static
-int jsnn_match_path(const char *js, jsnntok_t *tokens, jsnntok_t *token, jsnn_path *path) {
-    jsnntok_t *tok, *ptok, *ntok;
-    jsnn_path *p;
-#ifdef JSNN_DEBUG
-    int width;
-#endif
-    
-    p = path;
-    tok = token;
-
-    printf("\nmatching token ("); print_tail_token(js, tok);
-    printf("), path ("); print_path(p);
-    printf(")...\n");
-
-    for (;;) {
-        //printf("token start: %d\n", tok->start);
-        //printf("token type: %d\n", tok->type);
-
-        /* If parent token is NULL, then the current token is the root obj.
-           Success! */
-        if (tok->parent == -1 && p == NULL) {
-            printf("  success\n");
-            break;
-        }
-        ptok = &tokens[tok->parent];
-
-        printf("  %s, %s\n",
-            jsnn_type_strs[tok->type],
-            jsnn_type_strs[p->value_type]);
-        if (tok->type != p->value_type) {
-            printf("  value type mismatch\n");
+int strnncmp(const char *s1, size_t n1, const char *s2, size_t n2) {
+    //printf("comparing %.*s with %.*s\n", n1, s1, n2, s2);
+    size_t pos;
+    int diff;
+    for (pos = 0;; pos++) {
+        if (pos == n1 && pos < n2)
+            return -1;
+        else if (pos == n2 && pos < n1)
             return 1;
-        }
-
-        /*
-        Inspect parent token: is it an object or an array?
-        If object, check the attribute name of the value.
-        If array, find the index at which value exists.
-        */
-        switch (ptok->type) {
-        case JSNN_OBJECT:
-            printf("  JSNN_PATH_ATTR, %s\n",
-                jsnn_path_type_strs[p->type]);
-            if (p->type != JSNN_PATH_ATTR) {
-                printf("  fail\n");
-                return 1;
-            }
-            /* Get attribute name token */
-            ntok = &tokens[tok - 1 - tokens];
-            printf("  %.*s, %s\n",
-                ntok->end - ntok->start, js + ntok->start,
-                p->name);
-            if (strncmp(p->name, js + ntok->start, ntok->end - ntok->start) != 0)
-                return 1;
-            break;
-        case JSNN_ARRAY:
-            printf("  JSNN_PATH_INDEX, %s\n",
-                jsnn_path_type_strs[p->type]);
-            //printf("  %.*s\n", tok->end - tok->start, js + tok->start);
-            if (p->type != JSNN_PATH_INDEX) {
-                printf("  fail\n");
-                return 1;
-            }
-            p->index = tok - ptok - 1;
-            break;
-        default:
-            /* We have problems */
-            return JSNN_ERROR_INVAL;
-        }
-
-        p = p->parent;
-        tok = ptok;
+        else if (pos == n1 && pos == n2)
+            return 0;
+            
+        diff = s1[pos] - s2[pos];
+        if (diff)
+            return diff;
     }
-
     return 0;
 }
 
-/**
- * @return Returns 0 if callback was called, negative if error, or 1 if
- * no path match was found for this token.
- */
 static
-int jsnn_do_callback(const char *js, jsnntok_t *tokens, jsnntok_t *token,
-        jsnn_path_callback *callbacks, void *data) {
+jsnntok_t *jsnn_match_index(const char *js, jsnntok_t *tokens, jsnntok_t *arr_tok, int index) {
+    jsnntok_t *tok;
+    int this, size, i;
 
-    jsnn_path_callback *pc;
-    int match;
-
-    if (token->pair_type != JSNN_VALUE) {
-        printf("was name\n");
-        print_tail_token(js, token);
-        printf("\n");
-        return JSNN_ERROR_INVAL;
+    if (arr_tok->type != JSNN_ARRAY) {
+        return NULL;
     }
 
-    for (pc = callbacks; pc->path != NULL; pc++) {
-        match = jsnn_match_path(js, tokens, token, pc->path);
-        if (match == 0) {
-            pc->callback(pc->path, js + token->start, token->end - token->start, data);
-            return 0;
-        } else if (match < 0) {
-            printf("match problem\n");
-            return match;
+    /* Advance through tokens til we find match */
+    this = arr_tok - tokens;
+    size = arr_tok->size;
+    i = 0;
+    for (tok = arr_tok + 1; i < size; tok++) {
+        if (tok->parent == this) {
+            if (i == index)
+                return tok;
+            i++;
         }
     }
 
-    return 1;
+    return NULL;
 }
+
+static
+jsnntok_t *jsnn_match_attr(const char *js, jsnntok_t *tokens, jsnntok_t *obj_tok, const char *name, int len) {
+    jsnntok_t *tok;
+    int this, nattrs, hit;
+
+    if (obj_tok->type != JSNN_OBJECT) {
+        return NULL;
+    }
+
+    /* Advance through tokens til we find match */
+    this = obj_tok - tokens;
+    nattrs = obj_tok->size / 2;
+    hit = 0;
+    for (tok = obj_tok; hit < nattrs; tok++) {
+        if (tok->pair_type == JSNN_NAME && tok->parent == this) {
+            if (strnncmp(js + tok->start, tok->end - tok->start, name, len) == 0)
+                return tok + 1;
+            hit++;
+        }
+    }
+
+    return NULL;
+}
+
+jsnntok_t *jsnn_get(jsnntok_t *root, const char *path, const char *js, jsnntok_t *tokens) {
+    int pos;
+    int start, len, index;
+    char c, *chp;
+    jsnntok_t *tok;
+
+    if (strlen(path) == 0) return NULL;
+
+#ifdef JSNN_DEBUG
+    printf("path: %s\n", path);
+#endif
+
+    tok = root;
+    for (pos = 0, start = 0;;) {
+        c = path[pos];
+
+        switch (c) {
+        case '.':
+#ifdef JSNN_DEBUG
+            printf("  found . at %d\n", pos);
+#endif
+            len = pos - start;
+            if ((tok = jsnn_match_attr(js, tokens, tok, path + start, len)) == NULL)
+                return NULL;
+            start = ++pos;
+            break;
+        case '[':
+#ifdef JSNN_DEBUG
+            printf("  found [ at %d\n", pos);
+#endif
+            if (start > 0) {
+                /* Indicates end of attr specification */
+                len = pos - start;
+                if ((tok = jsnn_match_attr(js, tokens, tok, path + start, len)) == NULL)
+                    return NULL;
+            }
+
+            c = path[++pos];
+
+            if (c >= '0' && c <= '9') {
+                /* Bracket is an index spec. */
+                index = strtol(path + pos, &chp, 10);
+                if ((tok = jsnn_match_index(js, tokens, tok, index)) == NULL)
+                    return NULL;
+                pos += chp - (path + pos);
+            } else if (c == '\'') {
+                /* Bracket is an attribute spec */
+                start = ++pos;
+                for (pos;; pos++) {
+                    c = path[pos];
+                    if (c == '\'' && path[pos - 1] != '\\') {
+                        len = pos - start;
+                        if ((tok = jsnn_match_attr(js, tokens, tok, path + start, len)) == NULL)
+                            return NULL;
+                        break;
+                    }
+                }
+            } else {
+                printf("Bad char in bracket expression.\n");
+                return NULL;
+            }
+
+            if (path[pos] != ']') {
+                printf("Bracket not closed properly.\n");
+                return NULL;
+            }
+            break;
+        case '\0':
+            if (path[pos - 1] != ']') {
+                /* Grab the last attr. */
+                len = pos - start;
+                if ((tok = jsnn_match_attr(js, tokens, tok, path + start, len)) == NULL)
+                    return NULL;
+            }
+            return tok;
+        case '\t':
+        case '\r':
+        case '\n':
+        case ' ':
+            printf("no spaces outside of quotes\n");
+            return NULL;
+        default:
+            pos++;
+        }
+    }
+
+    printf("The great escape!\n");
+    return NULL;
+}
+
+
 
 /**
  * Parse JSON string and fill tokens.
  */
 jsnnerr_t jsnn_parse(jsnn_parser *parser, const char *js, jsnntok_t *tokens, 
-		unsigned int num_tokens, jsnn_path_callback *callbacks, void *data) {
+		unsigned int num_tokens) {
 	jsnnerr_t r;
 	int i;
 	jsnntok_t *token;
@@ -359,10 +365,6 @@ jsnnerr_t jsnn_parse(jsnn_parser *parser, const char *js, jsnntok_t *tokens,
 						}
 						token->end = parser->pos + 1;
 						parser->toksuper = token->parent;
-                        if (callbacks != NULL) {
-                            r = jsnn_do_callback(js, tokens, token, callbacks, data);
-                            if (r < 0) return r;
-                        }
 						break;
 					}
 					if (token->parent == -1) {
@@ -370,6 +372,7 @@ jsnnerr_t jsnn_parse(jsnn_parser *parser, const char *js, jsnntok_t *tokens,
 					}
 					token = &tokens[token->parent];
 				}
+                break;
             case ',':
                 if (tokens[parser->toksuper].type == JSNN_OBJECT)
                     pairtype = JSNN_NAME;
@@ -379,11 +382,6 @@ jsnnerr_t jsnn_parse(jsnn_parser *parser, const char *js, jsnntok_t *tokens,
 				if (r < 0) return r;
 				if (parser->toksuper != -1)
 					tokens[parser->toksuper].size++;
-                if (callbacks != NULL && pairtype == JSNN_VALUE) {
-                    token = &tokens[parser->toknext - 1];
-                    r = jsnn_do_callback(js, tokens, token, callbacks, data);
-                    if (r < 0) return r;
-                }
 				break;
             case ':':
                 pairtype = JSNN_VALUE;

@@ -1,6 +1,10 @@
 #ifndef __JSNN_H_
 #define __JSNN_H_
 
+#ifndef JSNN_MAX_DEPTH
+    #define JSNN_MAX_DEPTH 128
+#endif
+
 /**
  * JSON type identifier. Basic types are:
  * 	o Object
@@ -20,10 +24,6 @@ typedef enum {
     JSNN_VALUE = 1
 } jsnnpair_t;
 
-typedef enum {
-    JSNN_PATH_INDEX = 0,
-    JSNN_PATH_ATTR = 1
-} jsnnpath_t;
 
 typedef enum {
 	/* Not enough tokens were provided */
@@ -37,25 +37,6 @@ typedef enum {
 } jsnnerr_t;
 
 
-typedef struct jsnn_path jsnn_path;
-
-typedef int jsnn_callback(jsnn_path *path, const char *value, int len, void *data);
-
-struct jsnn_path {
-    jsnnpath_t type;
-    jsnntype_t value_type;
-    const char *name;
-    unsigned int index;
-    jsnn_path *parent;
-};
-
-typedef struct {
-    jsnn_path *path;
-    jsnn_callback *callback;
-} jsnn_path_callback;
-
-void jsnn_index_path(jsnn_path *path, jsnntype_t value_type, jsnn_path *array);
-void jsnn_attr_path(jsnn_path *path, const char *name, jsnntype_t value_type, jsnn_path *object);
 
 /**
  * JSON token description.
@@ -93,7 +74,15 @@ void jsnn_init(jsnn_parser *parser);
  * a single JSON object.
  */
 jsnnerr_t jsnn_parse(jsnn_parser *parser, const char *js, 
-		jsnntok_t *tokens, unsigned int num_tokens,
-        jsnn_path_callback *callbacks, void *data);
+		jsnntok_t *tokens, unsigned int num_tokens);
+
+/**
+ * Extract a value from the tokens returned by the parser based on a javascript-style
+ * attribute/index access syntax.
+ *
+ * @param   path    Path to json node (e.g. "states[2].counties[10].name")
+ */
+jsnntok_t *jsnn_get(jsnntok_t *root, const char *path,
+        const char *json, jsnntok_t *tokens);
 
 #endif /* __JSNN_H_ */

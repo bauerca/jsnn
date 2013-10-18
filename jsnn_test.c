@@ -4,6 +4,9 @@
 
 #include "jsnn.c"
 
+#define MAX_CHARS 65536
+static char jsfile[MAX_CHARS];
+
 static int test_passed = 0;
 static int test_failed = 0;
 
@@ -40,6 +43,21 @@ static void test(int (*func)(void), const char *name) {
 	printf("start: %d, end: %d, type: %d, size: %d\n", \
 			(t).start, (t).end, (t).type, (t).size)
 
+int open_json(const char *path) {
+    FILE *fp;
+    size_t size;
+    fp = fopen(path, "r");
+
+    if (fp == NULL)
+        return -1;
+
+    size = fread((void *)jsfile, sizeof(char), MAX_CHARS, fp);
+    jsfile[size] = '\0';
+    fclose(fp);
+
+    return 0;
+}
+
 int test_empty() {
 	const char *js;
 	int r;
@@ -48,21 +66,21 @@ int test_empty() {
 
 	js = "{}";
 	jsnn_init(&p);
-	r = jsnn_parse(&p, js, t, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, t, 10);
 	check(r == JSNN_SUCCESS);
 	check(t[0].type == JSNN_OBJECT);
 	check(t[0].start == 0 && t[0].end == 2);
 
 	js = "[]";
 	jsnn_init(&p);
-	r = jsnn_parse(&p, js, t, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, t, 10);
 	check(r == JSNN_SUCCESS);
 	check(t[0].type == JSNN_ARRAY);
 	check(t[0].start == 0 && t[0].end == 2);
 
 	js = "{\"a\":[]}";
 	jsnn_init(&p);
-	r = jsnn_parse(&p, js, t, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, t, 10);
 	check(r == JSNN_SUCCESS);
 	check(t[0].type == JSNN_OBJECT && t[0].start == 0 && t[0].end == 8);
 	check(t[1].type == JSNN_STRING && t[1].start == 2 && t[1].end == 3);
@@ -70,7 +88,7 @@ int test_empty() {
 
 	js = "[{},{}]";
 	jsnn_init(&p);
-	r = jsnn_parse(&p, js, t, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, t, 10);
 	check(r == JSNN_SUCCESS);
 	check(t[0].type == JSNN_ARRAY && t[0].start == 0 && t[0].end == 7);
 	check(t[1].type == JSNN_OBJECT && t[1].start == 1 && t[1].end == 3);
@@ -78,32 +96,57 @@ int test_empty() {
 	return 0;
 }
 
+int test_complex() {
+	const char *js;
+	int r;
+	jsnn_parser p;
+	jsnntok_t tokens[1024], *token;
+
+	jsnn_init(&p);
+    r = open_json("pets.json");
+    check(r == 0);
+	r = jsnn_parse(&p, jsfile, tokens, 1024);
+	check(r == JSNN_SUCCESS);
+    token = jsnn_get(tokens, "a.aa.aaa[1]", js, tokens);
+    //printf("%.*s\n", token->end - token->start, js + token->start);
+    check(token != NULL);
+
+    return 0;
+}
+
+int test_deep() {
+	const char *js;
+	int r;
+	jsnn_parser p;
+	jsnntok_t tokens[20], *token;
+
+	js = "{\"a\": {\"aa\": {\"aaa\": [3, 2, 1]}}}";
+
+	jsnn_init(&p);
+	r = jsnn_parse(&p, js, tokens, 10);
+	check(r == JSNN_SUCCESS);
+    //token = jsnn_match_attr(js, tokens, tokens, "a", 1);
+    //check(token != NULL);
+    token = jsnn_get(tokens, "a.aa.aaa[1]", js, tokens);
+    //printf("%.*s\n", token->end - token->start, js + token->start);
+    check(token != NULL);
+	check(TOKEN_EQ(*token, 25, 26, JSNN_PRIMITIVE));
+    //check(atoi(js + token->start) == 0);
+
+    return 0;
+}
+
 int test_simple() {
 	const char *js;
 	int r;
 	jsnn_parser p;
-	jsnntok_t tokens[10];
-
-    int a = -1;
-    int get_a(jsnn_path *path, const char *value, int len, void *data) {
-        printf("setting a from %s\n", value);
-        *((int *)data) = atoi(value);
-    }
-        
-    jsnn_path a_path;
-    jsnn_attr_path(&a_path, "a", JSNN_PRIMITIVE, NULL);
-
-    jsnn_path_callback callbacks[] = {
-        { &a_path, get_a },
-        { NULL, NULL }
-    };
+	jsnntok_t tokens[10], *token;
 
 	js = "{\"a\": 0}";
 
 	jsnn_init(&p);
-	r = jsnn_parse(&p, js, tokens, 10, callbacks, &a);
+	r = jsnn_parse(&p, js, tokens, 10);
 	check(r == JSNN_SUCCESS);
-    check(a == 0);
 	check(TOKEN_EQ(tokens[0], 0, 8, JSNN_OBJECT));
 	check(TOKEN_EQ(tokens[1], 2, 3, JSNN_STRING));
 	check(TOKEN_EQ(tokens[2], 6, 7, JSNN_PRIMITIVE));
@@ -112,21 +155,14 @@ int test_simple() {
 	check(TOKEN_STRING(js, tokens[1], "a"));
 	check(TOKEN_STRING(js, tokens[2], "0"));
 
-    a_path.value_type = JSNN_STRING;
-    a = -1;
-    jsnn_init(&p);
-	r = jsnn_parse(&p, js, tokens, 10, callbacks, &a);
-	check(r == JSNN_SUCCESS);
-    check(a == -1);
-
 	jsnn_init(&p);
 	js = "[\"a\":{},\"b\":{}]";
-	r = jsnn_parse(&p, js, tokens, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tokens, 10);
 	check(r == JSNN_SUCCESS);
 
 	jsnn_init(&p);
 	js = "{\n \"Day\": 26,\n \"Month\": 9,\n \"Year\": 12\n }";
-	r = jsnn_parse(&p, js, tokens, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tokens, 10);
 	check(r == JSNN_SUCCESS);
 
 
@@ -141,7 +177,7 @@ int test_primitive() {
 #ifndef JSNN_STRICT
 	js = "\"boolVar\" : true";
 	jsnn_init(&p);
-	r = jsnn_parse(&p, js, tok, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tok, 10);
 	check(r == JSNN_SUCCESS && tok[0].type == JSNN_STRING 
 			&& tok[1].type == JSNN_PRIMITIVE);
 	check(TOKEN_STRING(js, tok[0], "boolVar"));
@@ -149,7 +185,7 @@ int test_primitive() {
 
 	js = "\"boolVar\" : false";
 	jsnn_init(&p);
-	r = jsnn_parse(&p, js, tok, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tok, 10);
 	check(r == JSNN_SUCCESS && tok[0].type == JSNN_STRING 
 			&& tok[1].type == JSNN_PRIMITIVE);
 	check(TOKEN_STRING(js, tok[0], "boolVar"));
@@ -157,7 +193,7 @@ int test_primitive() {
 
 	js = "\"intVar\" : 12345";
 	jsnn_init(&p);
-	r = jsnn_parse(&p, js, tok, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tok, 10);
 	check(r == JSNN_SUCCESS && tok[0].type == JSNN_STRING 
 			&& tok[1].type == JSNN_PRIMITIVE);
 	check(TOKEN_STRING(js, tok[0], "intVar"));
@@ -165,7 +201,7 @@ int test_primitive() {
 
 	js = "\"floatVar\" : 12.345";
 	jsnn_init(&p);
-	r = jsnn_parse(&p, js, tok, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tok, 10);
 	check(r == JSNN_SUCCESS && tok[0].type == JSNN_STRING 
 			&& tok[1].type == JSNN_PRIMITIVE);
 	check(TOKEN_STRING(js, tok[0], "floatVar"));
@@ -173,7 +209,7 @@ int test_primitive() {
 
 	js = "\"nullVar\" : null";
 	jsnn_init(&p);
-	r = jsnn_parse(&p, js, tok, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tok, 10);
 	check(r == JSNN_SUCCESS && tok[0].type == JSNN_STRING 
 			&& tok[1].type == JSNN_PRIMITIVE);
 	check(TOKEN_STRING(js, tok[0], "nullVar"));
@@ -190,7 +226,7 @@ int test_string() {
 
 	js = "\"strVar\" : \"hello world\"";
 	jsnn_init(&p);
-	r = jsnn_parse(&p, js, tok, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tok, 10);
 	check(r == JSNN_SUCCESS && tok[0].type == JSNN_STRING 
 			&& tok[1].type == JSNN_STRING);
 	check(TOKEN_STRING(js, tok[0], "strVar"));
@@ -198,7 +234,7 @@ int test_string() {
 
 	js = "\"strVar\" : \"escapes: \\/\\r\\n\\t\\b\\f\\\"\\\\\"";
 	jsnn_init(&p);
-	r = jsnn_parse(&p, js, tok, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tok, 10);
 	check(r == JSNN_SUCCESS && tok[0].type == JSNN_STRING 
 			&& tok[1].type == JSNN_STRING);
 	check(TOKEN_STRING(js, tok[0], "strVar"));
@@ -206,7 +242,7 @@ int test_string() {
 
 	js = "\"strVar\" : \"\"";
 	jsnn_init(&p);
-	r = jsnn_parse(&p, js, tok, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tok, 10);
 	check(r == JSNN_SUCCESS && tok[0].type == JSNN_STRING 
 			&& tok[1].type == JSNN_STRING);
 	check(TOKEN_STRING(js, tok[0], "strVar"));
@@ -223,26 +259,26 @@ int test_partial_string() {
 
 	jsnn_init(&p);
 	js = "\"x\": \"va";
-	r = jsnn_parse(&p, js, tok, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tok, 10);
 	check(r == JSNN_ERROR_PART && tok[0].type == JSNN_STRING);
 	check(TOKEN_STRING(js, tok[0], "x"));
 	check(p.toknext == 1);
 
 	js = "\"x\": \"valu";
-	r = jsnn_parse(&p, js, tok, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tok, 10);
 	check(r == JSNN_ERROR_PART && tok[0].type == JSNN_STRING);
 	check(TOKEN_STRING(js, tok[0], "x"));
 	check(p.toknext == 1);
 
 	js = "\"x\": \"value\"";
-	r = jsnn_parse(&p, js, tok, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tok, 10);
 	check(r == JSNN_SUCCESS && tok[0].type == JSNN_STRING
 			&& tok[1].type == JSNN_STRING);
 	check(TOKEN_STRING(js, tok[0], "x"));
 	check(TOKEN_STRING(js, tok[1], "value"));
 
 	js = "\"x\": \"value\", \"y\": \"value y\"";
-	r = jsnn_parse(&p, js, tok, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tok, 10);
 	check(r == JSNN_SUCCESS && tok[0].type == JSNN_STRING
 			&& tok[1].type == JSNN_STRING && tok[2].type == JSNN_STRING
 			&& tok[3].type == JSNN_STRING);
@@ -264,7 +300,7 @@ int test_unquoted_keys() {
 	jsnn_init(&p);
 	js = "key1: \"value\"\nkey2 : 123";
 
-	r = jsnn_parse(&p, js, tok, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tok, 10);
 	check(r == JSNN_SUCCESS && tok[0].type == JSNN_PRIMITIVE
 			&& tok[1].type == JSNN_STRING && tok[2].type == JSNN_PRIMITIVE
 			&& tok[3].type == JSNN_PRIMITIVE);
@@ -284,18 +320,18 @@ int test_partial_array() {
 
 	jsnn_init(&p);
 	js = "  [ 1, true, ";
-	r = jsnn_parse(&p, js, tok, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tok, 10);
 	check(r == JSNN_ERROR_PART && tok[0].type == JSNN_ARRAY 
 			&& tok[1].type == JSNN_PRIMITIVE && tok[2].type == JSNN_PRIMITIVE);
 
 	js = "  [ 1, true, [123, \"hello";
-	r = jsnn_parse(&p, js, tok, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tok, 10);
 	check(r == JSNN_ERROR_PART && tok[0].type == JSNN_ARRAY 
 			&& tok[1].type == JSNN_PRIMITIVE && tok[2].type == JSNN_PRIMITIVE
 			&& tok[3].type == JSNN_ARRAY && tok[4].type == JSNN_PRIMITIVE);
 
 	js = "  [ 1, true, [123, \"hello\"]";
-	r = jsnn_parse(&p, js, tok, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tok, 10);
 	check(r == JSNN_ERROR_PART && tok[0].type == JSNN_ARRAY 
 			&& tok[1].type == JSNN_PRIMITIVE && tok[2].type == JSNN_PRIMITIVE
 			&& tok[3].type == JSNN_ARRAY && tok[4].type == JSNN_PRIMITIVE
@@ -304,7 +340,7 @@ int test_partial_array() {
 	check(tok[3].size == 2);
 
 	js = "  [ 1, true, [123, \"hello\"]]";
-	r = jsnn_parse(&p, js, tok, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tok, 10);
 	check(r == JSNN_SUCCESS && tok[0].type == JSNN_ARRAY 
 			&& tok[1].type == JSNN_PRIMITIVE && tok[2].type == JSNN_PRIMITIVE
 			&& tok[3].type == JSNN_ARRAY && tok[4].type == JSNN_PRIMITIVE
@@ -327,12 +363,12 @@ int test_array_nomem() {
 		jsnn_init(&p);
 		memset(toksmall, 0, sizeof(toksmall));
 		memset(toklarge, 0, sizeof(toklarge));
-		r = jsnn_parse(&p, js, toksmall, i, NULL, NULL);
+		r = jsnn_parse(&p, js, toksmall, i);
 		check(r == JSNN_ERROR_NOMEM);
 
 		memcpy(toklarge, toksmall, sizeof(toksmall));
 
-		r = jsnn_parse(&p, js, toklarge, 10, NULL, NULL);
+		r = jsnn_parse(&p, js, toklarge, 10);
 		check(r == JSNN_SUCCESS);
 
 		check(toklarge[0].type == JSNN_ARRAY && toklarge[0].size == 3);
@@ -350,28 +386,29 @@ int test_objects_arrays() {
 
 	js = "[10}";
 	jsnn_init(&p);
-	r = jsnn_parse(&p, js, tokens, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tokens, 10);
 	check(r == JSNN_ERROR_INVAL);
 
 	js = "[10]";
 	jsnn_init(&p);
-	r = jsnn_parse(&p, js, tokens, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tokens, 10);
 	check(r == JSNN_SUCCESS);
 
 	js = "{\"a\": 1]";
 	jsnn_init(&p);
-	r = jsnn_parse(&p, js, tokens, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tokens, 10);
 	check(r == JSNN_ERROR_INVAL);
 
 	js = "{\"a\": 1}";
 	jsnn_init(&p);
-	r = jsnn_parse(&p, js, tokens, 10, NULL, NULL);
+	r = jsnn_parse(&p, js, tokens, 10);
 	check(r == JSNN_SUCCESS);
 
 	return 0;
 }
 
 int main() {
+    test(test_deep, "test a \"deeply\" nested JSON object");
 	test(test_empty, "general test for a empty JSON objects/arrays");
 	test(test_simple, "general test for a simple JSON string");
 	test(test_primitive, "test primitive JSON data types");
