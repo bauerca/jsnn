@@ -49,6 +49,26 @@ gracie = jsnn_get(tokens, "dogs[1]", tokens, json);
 breed = jsnn_get(gracie, "breed", tokens, json);
 ```
 
+###Comparing token strings
+
+Comparing token strings to string literals can be cumbersome since
+a token just gives you a start and end position in the json string
+and `strncmp` is really not what you want (usually). (`strncmp`
+compares only the first `n` characters of two strings; if they
+are the same, the strings are equal. This was designed for
+prefix matching.)
+
+If you'd like to test the value of a string token against a C string
+literal, you can now just do:
+
+```c
+jsnntok_t *breed;
+breed = jsnn_get(tokens, "dogs[1].breed", tokens, json);
+if (jsnn_cmp(breed, json, "golden retriever") == 0)
+    printf("I have the best dog.");
+```
+
+
 Below is the documentation from jsmn.
 
 JSMN

@@ -85,4 +85,11 @@ jsnnerr_t jsnn_parse(jsnn_parser *parser, const char *js,
 jsnntok_t *jsnn_get(jsnntok_t *root, const char *path,
         const char *json, jsnntok_t *tokens);
 
+/**
+ * Compare a null-terminated string with the string pointed to by
+ * the given token. Returns 0 if equal, <0 if token string is less
+ * than s, and >0 if token string is greater than s.
+ */
+int jsnn_cmp(jsnntok_t *token, const char *json, const char *s);
+
 #endif /* __JSNN_H_ */

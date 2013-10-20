@@ -432,3 +432,24 @@ void jsnn_init(jsnn_parser *parser) {
 	parser->toksuper = -1;
 }
 
+
+int jsnn_cmp(jsnntok_t *token, const char *json, const char *s) {
+    //printf("comparing %.*s with %.*s\n", n1, s1, n2, s2);
+    size_t pos, len;
+    int diff;
+    char c;
+
+    len = token->end - token->start;
+    for (pos = 0;; pos++) {
+        c = s[pos];
+        if (pos == len) {
+            if (c == '\0') return 0;
+            return -1;
+        } else if (c == '\0') return 1;
+
+        diff = json[token->start] - c;
+        if (diff)
+            return diff;
+    }
+    return 0;
+}
