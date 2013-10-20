@@ -447,7 +447,7 @@ int jsnn_cmp(jsnntok_t *token, const char *json, const char *s) {
             return -1;
         } else if (c == '\0') return 1;
 
-        diff = json[token->start] - c;
+        diff = json[token->start + pos] - c;
         if (diff)
             return diff;
     }

@@ -114,6 +114,23 @@ int test_complex() {
     return 0;
 }
 
+int test_cmp() {
+	const char *js;
+	int r;
+	jsnn_parser p;
+	jsnntok_t tokens[20], *token;
+
+	js = "{\"a\": \"hi\"}";
+
+	jsnn_init(&p);
+	r = jsnn_parse(&p, js, tokens, 10);
+	check(r == JSNN_SUCCESS);
+    token = jsnn_get(tokens, "a", js, tokens);
+    check(token != NULL);
+    check(jsnn_cmp(token, js, "hi") == 0);
+    return 0;
+}
+
 int test_deep() {
 	const char *js;
 	int r;
@@ -408,6 +425,7 @@ int test_objects_arrays() {
 }
 
 int main() {
+    test(test_cmp, "test convenience get and cmp functions");
     test(test_deep, "test a \"deeply\" nested JSON object");
 	test(test_empty, "general test for a empty JSON objects/arrays");
 	test(test_simple, "general test for a simple JSON string");
